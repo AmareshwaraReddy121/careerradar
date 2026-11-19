@@ -1,0 +1,33 @@
+{
+  "name": "careerradar",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "services:up": "docker compose -f infra/docker-compose.yml up -d",
+    "services:down": "docker compose -f infra/docker-compose.yml down",
+    "seed:admin": "pnpm --filter @careerradar/api seed:admin",
+    "setup:env": "node scripts/init-env.mjs",
+    "gateway:build": "cd integrations/mulesoft/careerradar-gateway && mvn -B package"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "eslint": "^9",
+    "eslint-plugin-react-hooks": "^5",
+    "globals": "^17.14.0",
+    "prettier": "^3",
+    "turbo": "^2",
+    "typescript": "~5.6",
+    "typescript-eslint": "^8"
+  },
+  "type": "module"
+}
