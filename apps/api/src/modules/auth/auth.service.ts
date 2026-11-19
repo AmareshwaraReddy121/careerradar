@@ -242,10 +242,15 @@ export async function forgotPassword(email: string) {
 
 export async function resetPassword(raw: string, password: string) {
   const token = await consumeActionToken(raw, 'reset_password');
-  await User.updateOne(
-    { _id: token.userId },
-    { $set: { passwordHash: await hashPassword(password), passwordChangedAt: new Date() } },
+  const user = await User.findById(token.userId).select('passwordChangedAt');
+  if (!user) throw badRequest('This link is invalid or has expired');
+  const passwordHash = await hashPassword(password);
+  // Compare-and-set on the credential version so overlapping resets can't both succeed.
+  const updated = await User.updateOne(
+    { _id: user._id, passwordChangedAt: user.passwordChangedAt ?? null },
+    { $set: { passwordHash, passwordChangedAt: new Date() } },
   );
+  if (updated.modifiedCount === 0) throw badRequest('This link is invalid or has expired');
   await Promise.all([
     revokeAllSessions(token.userId),
     invalidateActionTokens(token.userId, 'reset_password'),
