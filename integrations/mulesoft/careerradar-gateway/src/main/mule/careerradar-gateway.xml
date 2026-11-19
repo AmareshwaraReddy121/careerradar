@@ -12,7 +12,8 @@
     <http:listener-connection host="0.0.0.0" port="${http.port}"/>
   </http:listener-config>
 
-  <http:request-config name="backendApi" responseTimeout="${backend.responseTimeoutMs}">
+  <!-- enableCookies=false: never keep a shared cookie jar across callers. -->
+  <http:request-config name="backendApi" responseTimeout="${backend.responseTimeoutMs}" enableCookies="false">
     <http:request-connection host="${backend.host}" port="${backend.port}" protocol="${backend.protocol}"/>
   </http:request-config>
 
@@ -34,6 +35,7 @@
         <http:headers>#[vars.upstreamHeaders default {}]</http:headers>
       </http:response>
       <http:error-response statusCode="#[vars.errorStatus default 502]">
+        <http:body>#[payload]</http:body>
         <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': vars.correlationId default correlationId}]</http:headers>
       </http:error-response>
     </http:listener>

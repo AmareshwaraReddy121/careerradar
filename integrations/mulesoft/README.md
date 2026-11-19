@@ -20,7 +20,7 @@ Browser / mobile ──► Mule gateway (careerradar-gateway, :8081) ──► E
 - Strips hop-by-hop headers, adds `X-Forwarded-For/Proto/Host`, and propagates or creates `X-Correlation-ID`.
 - Returns `502 UPSTREAM_UNAVAILABLE` / `504 UPSTREAM_TIMEOUT` JSON errors in the API's error format when the backend is down or slow.
 
-When the API runs behind the gateway, set `TRUST_PROXY=1` in `apps/api/.env` so rate limiting and audit logs use the client IP from `X-Forwarded-For`.
+When the API runs behind the gateway, set `TRUST_PROXY` in `apps/api/.env` to the number of proxy hops in front of Express: `1` for the local gateway, `2` behind CloudHub ingress + gateway (otherwise the ingress address is treated as the client and shares one rate-limit bucket). With it set correctly, rate limiting and audit logs use the client IP from `X-Forwarded-For`.
 
 ## Run locally (Mule Community runtime, no Anypoint account needed)
 
