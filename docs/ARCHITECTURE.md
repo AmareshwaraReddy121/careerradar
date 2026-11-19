@@ -702,3 +702,11 @@ SENTRY_DSN=
 3. **Hosting for v1:** Vercel + Render + Atlas + Upstash (cheapest path) vs AWS from day one?
 4. **Polling policy:** accept the adaptive 15-min default for official pages (§8.4), or require 1–5 min on specific sources?
 5. **Moderation:** confirm human review before government jobs are shown as "Verified" at launch.
+
+## Addendum — MuleSoft integration layer
+
+Decided after Phase 0: MuleSoft (Anypoint, Mule 4) is the API gateway and integration layer. The Express API remains the core service and system of record.
+
+- **Gateway:** `integrations/mulesoft/careerradar-gateway` proxies `/api/*` to the Express API; API Manager applies rate limiting, client-ID enforcement, CORS and IP policies.
+- **Contract:** `integrations/mulesoft/api/careerradar-api.yaml` (OpenAPI 3) is published to Anypoint Exchange.
+- **Integrations (Phase 2–3):** scheduled Mule flows will fetch RSS feeds, partner/job APIs and official recruitment pages, normalise them with DataWeave and post them to the API's ingestion endpoints. PDF extraction stays in the Python collector.

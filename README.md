@@ -10,13 +10,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architecture and r
 
 ## Repository layout
 
-| Path              | What                                                        |
-| ----------------- | ----------------------------------------------------------- |
-| `apps/api`        | Express + TypeScript REST API (MongoDB via Mongoose)        |
-| `apps/web`        | React + Vite + Tailwind CSS web app                         |
-| `packages/shared` | Zod schemas, enums, taxonomies and DTO types shared by both |
-| `infra`           | Docker Compose for local MongoDB, Redis and Mailpit         |
-| `docs`            | Architecture and roadmap                                    |
+| Path                    | What                                                                |
+| ----------------------- | ------------------------------------------------------------------- |
+| `apps/api`              | Express + TypeScript REST API (MongoDB via Mongoose)                |
+| `apps/web`              | React + Vite + Tailwind CSS web app                                 |
+| `packages/shared`       | Zod schemas, enums, taxonomies and DTO types shared by both         |
+| `integrations/mulesoft` | MuleSoft API gateway (Mule 4) and OpenAPI contract — see its README |
+| `infra`                 | Docker Compose for local MongoDB, Redis and Mailpit                 |
+| `docs`                  | Architecture and roadmap                                            |
 
 ## Prerequisites
 

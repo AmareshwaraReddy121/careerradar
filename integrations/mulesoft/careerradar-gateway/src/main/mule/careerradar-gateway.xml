@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+  <configuration-properties file="config.yaml"/>
+
+  <http:listener-config name="gatewayListener">
+    <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+  </http:listener-config>
+
+  <http:request-config name="backendApi" responseTimeout="${backend.responseTimeoutMs}">
+    <http:request-connection host="${backend.host}" port="${backend.port}" protocol="${backend.protocol}"/>
+  </http:request-config>
+
+  <!-- Gateway liveness; does not touch the backend. -->
+  <flow name="gateway-health">
+    <http:listener config-ref="gatewayListener" path="/gateway/health" allowedMethods="GET">
+      <http:response statusCode="200">
+        <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+      </http:response>
+    </http:listener>
+    <set-payload value='#[output application/json --- {status: "ok", gateway: "careerradar-gateway"}]'/>
+  </flow>
+
+  <!-- Transparent proxy for the CareerRadar REST API. Policies (client-id enforcement,
+       rate limiting, CORS, IP allowlists) are applied by Anypoint API Manager. -->
+  <flow name="api-proxy">
+    <http:listener config-ref="gatewayListener" path="/api/*">
+      <http:response statusCode="#[vars.upstreamStatus default 502]">
+        <http:headers>#[vars.upstreamHeaders default {}]</http:headers>
+      </http:response>
+      <http:error-response statusCode="#[vars.errorStatus default 502]">
+        <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': vars.correlationId default correlationId}]</http:headers>
+      </http:error-response>
+    </http:listener>
+
+    <set-variable variableName="correlationId"
+                  value="#[attributes.headers.'x-correlation-id' default correlationId]"/>
+    <set-variable variableName="hopByHop"
+                  value="#[['host', 'connection', 'keep-alive', 'transfer-encoding', 'content-length', 'te', 'trailer', 'upgrade', 'proxy-authorization', 'proxy-authenticate']]"/>
+
+    <http:request config-ref="backendApi" method="#[attributes.method]" path="#[attributes.requestPath]">
+      <http:headers><![CDATA[#[
+        (attributes.headers filterObject ((v, k) -> !(vars.hopByHop contains lower(k as String))))
+        ++ {
+          'X-Correlation-ID': vars.correlationId,
+          'X-Forwarded-For': (if (attributes.headers.'x-forwarded-for'?) attributes.headers.'x-forwarded-for' ++ ', ' else '')
+                             ++ ((attributes.remoteAddress default '') replace /^\/?([^:]+).*$/ with $[1]),
+          'X-Forwarded-Proto': attributes.scheme default 'http',
+          'X-Forwarded-Host': attributes.headers.host default ''
+        }
+      ]]]></http:headers>
+      <http:query-params>#[attributes.queryParams]</http:query-params>
+      <http:response-validator>
+        <http:success-status-code-validator values="100..599"/>
+      </http:response-validator>
+    </http:request>
+
+    <set-variable variableName="upstreamStatus" value="#[attributes.statusCode]"/>
+    <set-variable variableName="upstreamHeaders"
+                  value="#[(attributes.headers filterObject ((v, k) -> !(vars.hopByHop contains lower(k as String)))) ++ {'X-Correlation-ID': vars.correlationId}]"/>
+
+    <error-handler>
+      <on-error-propagate type="HTTP:TIMEOUT">
+        <set-variable variableName="errorStatus" value="504"/>
+        <set-payload value='#[output application/json --- {error: {code: "UPSTREAM_TIMEOUT", message: "The API did not respond in time"}}]'/>
+      </on-error-propagate>
+      <on-error-propagate type="HTTP:CONNECTIVITY">
+        <set-variable variableName="errorStatus" value="502"/>
+        <set-payload value='#[output application/json --- {error: {code: "UPSTREAM_UNAVAILABLE", message: "The API is unavailable"}}]'/>
+      </on-error-propagate>
+      <on-error-propagate type="ANY">
+        <logger level="ERROR" message="#['Gateway error ' ++ (error.errorType.identifier default '') ++ ': ' ++ (error.description default '') ++ ' cid=' ++ (vars.correlationId default '')]"/>
+        <set-variable variableName="errorStatus" value="502"/>
+        <set-payload value='#[output application/json --- {error: {code: "GATEWAY_ERROR", message: "Gateway error"}}]'/>
+      </on-error-propagate>
+    </error-handler>
+  </flow>
+</mule>

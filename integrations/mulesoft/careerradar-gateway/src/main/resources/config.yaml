@@ -1,0 +1,8 @@
+# Defaults for local development. Override with -M-D<key>=<value> or Runtime Manager properties.
+http:
+  port: '8081'
+backend:
+  host: 'localhost'
+  port: '4000'
+  protocol: 'HTTP'
+  responseTimeoutMs: '30000'
