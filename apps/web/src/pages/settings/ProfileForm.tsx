@@ -74,7 +74,8 @@ function toForm(p: ProfileDTO): FormValues {
   };
 }
 
-function toPayload(v: FormValues) {
+function toPayload(v: FormValues, profile: ProfileDTO) {
+  const levels = new Map(profile.skills.map((s) => [s.name.toLowerCase(), s.level]));
   return {
     fullName: v.fullName,
     dateOfBirth: str(v.dateOfBirth),
@@ -90,7 +91,10 @@ function toPayload(v: FormValues) {
       scale: e.scoreType === 'cgpa' ? (num(e.scale) ?? 10) : null,
       isAppearing: e.isAppearing,
     })),
-    skills: v.skills.map((name) => ({ name, level: 'intermediate' })),
+    skills: v.skills.map((name) => ({
+      name,
+      level: levels.get(name.toLowerCase()) ?? 'intermediate',
+    })),
     technicalKnowledge: str(v.technicalKnowledge),
     experience: v.experience.map((x) => ({
       organization: x.organization,
@@ -107,7 +111,17 @@ export function ProfileForm({ profile, tax }: { profile: ProfileDTO; tax: Taxono
   const qc = useQueryClient();
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const form = useForm<FormValues>({ defaultValues: toForm(profile) });
-  const { register, control, handleSubmit, watch, setError, formState, reset } = form;
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    setError,
+    formState,
+    reset,
+    getValues,
+    setValue,
+  } = form;
   const edu = useFieldArray({ control, name: 'education' });
   const exp = useFieldArray({ control, name: 'experience' });
   const err = formState.errors;
@@ -116,7 +130,7 @@ export function ProfileForm({ profile, tax }: { profile: ProfileDTO; tax: Taxono
 
   const save = useMutation({
     mutationFn: (v: FormValues) =>
-      api<{ profile: ProfileDTO }>('/profile', { method: 'PUT', body: toPayload(v) }),
+      api<{ profile: ProfileDTO }>('/profile', { method: 'PUT', body: toPayload(v, profile) }),
     onSuccess: (res) => {
       qc.setQueryData(['profile'], res);
       qc.invalidateQueries({ queryKey: ['dashboard'] });
@@ -205,7 +219,18 @@ export function ProfileForm({ profile, tax }: { profile: ProfileDTO; tax: Taxono
             return (
               <div key={f.id} className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label="Level" htmlFor={`edu-${i}-level`}>
-                  <Select id={`edu-${i}-level`} {...register(`education.${i}.level`)}>
+                  <Select
+                    id={`edu-${i}-level`}
+                    {...register(`education.${i}.level`, {
+                      onChange: (ev) => {
+                        const allowed = degreesFor(ev.target.value);
+                        const current = getValues(`education.${i}.degreeCode`);
+                        if (!allowed.some((d) => d.code === current)) {
+                          setValue(`education.${i}.degreeCode`, allowed[0]?.code ?? '');
+                        }
+                      },
+                    })}
+                  >
                     {tax.qualificationLevels.map((q) => (
                       <option key={q.code} value={q.code}>
                         {q.label}

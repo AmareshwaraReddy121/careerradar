@@ -28,9 +28,19 @@ export const tokenStore = {
 
 let refreshing: Promise<AuthResponse | null> | null = null;
 
-/** Single-flight refresh using the httpOnly refresh cookie. */
+const postRefresh = () => fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+
+/**
+ * Single-flight refresh using the httpOnly refresh cookie. A cross-tab lock makes tabs
+ * rotate one at a time, so a second tab sends the already-rotated cookie instead of
+ * replaying the old one (which the API treats as token theft).
+ */
 export function refreshSession(): Promise<AuthResponse | null> {
-  refreshing ??= fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+  refreshing ??= (
+    typeof navigator !== 'undefined' && navigator.locks
+      ? navigator.locks.request('cr-refresh', postRefresh)
+      : postRefresh()
+  )
     .then(async (res) => {
       if (!res.ok) return null;
       const data = (await res.json()) as AuthResponse;

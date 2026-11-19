@@ -1,3 +1,4 @@
+import { getSensitive } from '../profile/profile.service';
 import { Router, type Request, type Response } from 'express';
 import {
   changePasswordSchema,
@@ -143,15 +144,23 @@ meRouter.put('/notification-preferences', validate(notificationPrefsSchema), asy
 
 /** DPDP: export everything we hold about the user. */
 meRouter.get('/export', async (req, res) => {
-  const [user, profile, sessions] = await Promise.all([
+  const [user, profile, sensitive, sessions] = await Promise.all([
     User.findById(req.user!.id).lean(),
     UserProfile.findOne({ userId: req.user!.id }).lean(),
+    getSensitive(req.user!.id),
     RefreshToken.find({ userId: req.user!.id })
       .select('createdAt expiresAt revokedAt userAgent ip')
       .lean(),
   ]);
   res.setHeader('Content-Disposition', 'attachment; filename="careerradar-export.json"');
-  res.json({ exportedAt: new Date().toISOString(), user, profile, sessions, appUrl: env.APP_URL });
+  res.json({
+    exportedAt: new Date().toISOString(),
+    user,
+    profile,
+    sensitive,
+    sessions,
+    appUrl: env.APP_URL,
+  });
 });
 
 /** DPDP: permanently delete the account and all personal data. */

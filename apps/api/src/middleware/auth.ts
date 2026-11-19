@@ -4,6 +4,7 @@ import { ROLE_RANK, type Role } from '@careerradar/shared';
 import { env } from '../config/env';
 import { User } from '../models';
 import { forbidden, unauthorized } from '../lib/errors';
+import { credentialVersion } from '../modules/auth/auth.service';
 
 export interface AuthUser {
   id: string;
@@ -25,6 +26,7 @@ interface AccessPayload {
   sub: string;
   role: Role;
   iat: number;
+  pwv?: number;
 }
 
 async function resolveUser(header: string | undefined): Promise<AuthUser | null> {
@@ -43,7 +45,7 @@ async function resolveUser(header: string | undefined): Promise<AuthUser | null>
     .select('email role status emailVerifiedAt passwordChangedAt')
     .lean();
   if (!user || user.status !== 'active') throw unauthorized('Account is not active');
-  if (user.passwordChangedAt && payload.iat * 1000 < user.passwordChangedAt.getTime() - 1000) {
+  if ((payload.pwv ?? 0) !== credentialVersion(user)) {
     throw unauthorized('Session expired, please sign in again');
   }
   return {

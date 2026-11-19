@@ -12,6 +12,10 @@ async function main() {
 
   let user = await User.findOne({ email });
   if (user) {
+    // Only promote an account whose owner has proven control of the email address.
+    if (!user.emailVerifiedAt) {
+      throw new Error(`${email} exists but is not verified; verify it or delete it before seeding`);
+    }
     user.role = 'admin';
     user.status = 'active';
     await user.save();

@@ -124,6 +124,42 @@ describe('auth', () => {
     ).toBe(200);
   });
 
+  it('keeps earlier reset links valid until a password change, then invalidates them', async () => {
+    const { accessToken } = await registerUser();
+    await api().post('/api/v1/auth/forgot-password').send({ email: 'asha@example.com' });
+    const first = lastEmailToken();
+    await api().post('/api/v1/auth/forgot-password').send({ email: 'asha@example.com' });
+    const second = lastEmailToken();
+    expect(first).not.toBe(second);
+
+    const changed = await api()
+      .post('/api/v1/me/password')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ currentPassword: 'Secret123', newPassword: 'NewSecret456' });
+    expect(changed.status).toBe(200);
+    for (const token of [first, second]) {
+      const res = await api()
+        .post('/api/v1/auth/reset-password')
+        .send({ token, password: 'Hijack789x' });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it('rejects tokens issued before a password reset even within the same second', async () => {
+    const { accessToken, cookie } = await registerUser();
+    await api().post('/api/v1/auth/forgot-password').send({ email: 'asha@example.com' });
+    await api()
+      .post('/api/v1/auth/reset-password')
+      .send({ token: lastEmailToken(), password: 'NewSecret456' });
+    const me = await api().get('/api/v1/me').set('Authorization', `Bearer ${accessToken}`);
+    expect(me.status).toBe(401);
+    const refreshed = await api()
+      .post('/api/v1/auth/refresh')
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookie);
+    expect(refreshed.status).toBe(401);
+  });
+
   it('rejects access tokens of suspended users immediately', async () => {
     const { accessToken, user } = await registerUser();
     await User.updateOne({ _id: user.id }, { status: 'suspended' });

@@ -44,8 +44,12 @@ export interface IssuedTokens {
   refreshExpiresAt: Date;
 }
 
-export function signAccessToken(user: Pick<UserDoc, '_id' | 'role'>): string {
-  return jwt.sign({ role: user.role }, env.JWT_ACCESS_SECRET, {
+/** Changes whenever the password changes; tokens carrying an older value are rejected. */
+export const credentialVersion = (user: { passwordChangedAt?: Date | null }) =>
+  user.passwordChangedAt?.getTime() ?? 0;
+
+export function signAccessToken(user: Pick<UserDoc, '_id' | 'role' | 'passwordChangedAt'>): string {
+  return jwt.sign({ role: user.role, pwv: credentialVersion(user) }, env.JWT_ACCESS_SECRET, {
     subject: String(user._id),
     expiresIn: env.ACCESS_TOKEN_TTL as SignOptions['expiresIn'],
     algorithm: 'HS256',
@@ -53,13 +57,19 @@ export function signAccessToken(user: Pick<UserDoc, '_id' | 'role'>): string {
   });
 }
 
-async function issueRefreshToken(userId: unknown, familyId: string, client: ClientInfo) {
+async function issueRefreshToken(
+  userId: unknown,
+  familyId: string,
+  pwv: number,
+  client: ClientInfo,
+) {
   const raw = randomToken(32); // only the SHA-256 hash is stored
   const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 86_400_000);
   await RefreshToken.create({
     userId,
     tokenHash: sha256(raw),
     familyId,
+    credentialVersion: pwv,
     expiresAt,
     userAgent: client.userAgent?.slice(0, 300) ?? null,
     ip: client.ip ?? null,
@@ -72,8 +82,17 @@ async function issueTokens(
   client: ClientInfo,
   familyId = randomUUID(),
 ): Promise<IssuedTokens> {
-  const { raw, expiresAt } = await issueRefreshToken(user._id, familyId, client);
+  const { raw, expiresAt } = await issueRefreshToken(
+    user._id,
+    familyId,
+    credentialVersion(user),
+    client,
+  );
   return { accessToken: signAccessToken(user), refreshToken: raw, refreshExpiresAt: expiresAt };
+}
+
+async function invalidateActionTokens(userId: unknown, type: ActionTokenType) {
+  await ActionToken.updateMany({ userId, type, usedAt: null }, { $set: { usedAt: new Date() } });
 }
 
 async function createActionToken(
@@ -81,7 +100,9 @@ async function createActionToken(
   type: ActionTokenType,
   ttlMs: number,
 ): Promise<string> {
-  await ActionToken.updateMany({ userId, type, usedAt: null }, { $set: { usedAt: new Date() } });
+  // Reset links are invalidated only by a successful password change, so anonymous
+  // "forgot password" requests can't cancel a link the owner already received.
+  if (type !== 'reset_password') await invalidateActionTokens(userId, type);
   const raw = randomToken(32);
   await ActionToken.create({
     userId,
@@ -159,8 +180,12 @@ export async function refresh(raw: string | undefined, client: ClientInfo) {
 
   const user = await User.findById(record.userId);
   if (!user || user.status !== 'active') throw unauthorized('Account is not active');
+  if (record.credentialVersion !== credentialVersion(user)) {
+    await RefreshToken.updateOne({ _id: record._id }, { $set: { revokedAt: new Date() } });
+    throw unauthorized('Session expired');
+  }
 
-  const next = await issueRefreshToken(user._id, record.familyId, client);
+  const next = await issueRefreshToken(user._id, record.familyId, record.credentialVersion, client);
   const claimed = await RefreshToken.updateOne(
     { _id: record._id, revokedAt: null },
     { $set: { revokedAt: new Date(), replacedByHash: sha256(next.raw) } },
@@ -221,7 +246,10 @@ export async function resetPassword(raw: string, password: string) {
     { _id: token.userId },
     { $set: { passwordHash: await hashPassword(password), passwordChangedAt: new Date() } },
   );
-  await revokeAllSessions(token.userId);
+  await Promise.all([
+    revokeAllSessions(token.userId),
+    invalidateActionTokens(token.userId, 'reset_password'),
+  ]);
 }
 
 export async function changePassword(userId: string, currentPassword: string, newPassword: string) {
@@ -233,6 +261,9 @@ export async function changePassword(userId: string, currentPassword: string, ne
   user.passwordHash = await hashPassword(newPassword);
   user.passwordChangedAt = new Date();
   await user.save();
-  await revokeAllSessions(user._id);
+  await Promise.all([
+    revokeAllSessions(user._id),
+    invalidateActionTokens(user._id, 'reset_password'),
+  ]);
   return user;
 }

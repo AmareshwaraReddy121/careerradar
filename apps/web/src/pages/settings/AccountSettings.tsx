@@ -9,7 +9,7 @@ import {
   type NotificationPrefs,
   type UserDTO,
 } from '@careerradar/shared';
-import { api, errorMessage, tokenStore } from '@/lib/api';
+import { api, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Alert, Button, Card, CardHeader, Field, Input, Select, Toggle } from '@/components/ui';
 
@@ -179,11 +179,8 @@ function DataCard() {
         <Button
           variant="secondary"
           onClick={async () => {
-            const res = await fetch('/api/v1/me/export', {
-              headers: { Authorization: `Bearer ${tokenStore.get()}` },
-              credentials: 'include',
-            });
-            const blob = await res.blob();
+            const data = await api<unknown>('/me/export');
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = 'careerradar-export.json';

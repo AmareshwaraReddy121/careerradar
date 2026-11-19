@@ -41,6 +41,17 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       .json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body too large' } });
     return;
   }
-  logger.error({ err, reqId: req.id }, 'Unhandled error');
+  // Other body-parser failures (aborted uploads, bad encodings): never log the error object,
+  // which can carry the partially received body.
+  if (typeof err?.type === 'string' && err.status >= 400 && err.status < 500) {
+    res
+      .status(err.status)
+      .json({ error: { code: 'BAD_REQUEST', message: 'Invalid request body' } });
+    return;
+  }
+  logger.error(
+    { err: { name: err?.name, message: err?.message, stack: err?.stack }, reqId: req.id },
+    'Unhandled error',
+  );
   res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Something went wrong' } });
 };

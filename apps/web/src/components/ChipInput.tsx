@@ -62,8 +62,10 @@ export function ChipInput({
         value={draft}
         onChange={(e) => {
           const v = e.target.value;
-          // Selecting a datalist option fires a change with the full value.
-          if (suggestions.includes(v)) add(v);
+          // Picking a datalist option fires an input event without a typing inputType.
+          const inputType = (e.nativeEvent as InputEvent).inputType;
+          const picked = inputType === undefined || inputType === 'insertReplacementText';
+          if (picked && suggestions.includes(v)) add(v);
           else setDraft(v);
         }}
         onKeyDown={onKeyDown}
